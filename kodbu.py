@@ -1,143 +1,117 @@
 import sys
 import json
+import random
 import os
-import re
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-                             QTableWidget, QTableWidgetItem, QCheckBox, QMessageBox,
-                             QHeaderView, QComboBox)
+                             QListWidget, QComboBox, QMessageBox, QFrame)
 from PyQt6.QtCore import Qt
 
-class TrainingPlanner(QMainWindow):
+class QuoteGenerator(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Training Planner Pro")
-        self.setMinimumSize(900, 600)
-        self.file_path = "trainings.json"
-        self.trainings = self.load_data()
+        self.setWindowTitle("Random Quote Generator")
+        self.setMinimumSize(700, 500)
         
+        self.history_file = "history.json"
+        
+        # Начальный список цитат
+        self.base_quotes = [
+            {"text": "Поехали!", "author": "Юрий Гагарин", "theme": "Космос"},
+            {"text": "Быть или не быть?", "author": "Шекспир", "theme": "Философия"},
+            {"text": "Свобода — это осознанная необходимость.", "author": "Гегель", "theme": "Философия"},
+            {"text": "Жизнь — это то, что с тобой происходит, пока ты строишь планы.", "author": "Джон Леннон", "theme": "Жизнь"},
+            {"text": "Сложнее всего начать действовать, остальное зависит только от упорства.", "author": "Амелия Эрхарт", "theme": "Мотивация"}
+        ]
+        
+        self.history = self.load_history()
         self.init_ui()
-        self.apply_filters()
+        self.refresh_history_list()
 
     def init_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
+        main_layout = QVBoxLayout(central_widget)
 
-        # Панель управления
-        controls_layout = QVBoxLayout()
+        # Секция генерации
+        display_frame = QFrame()
+        display_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        display_layout = QVBoxLayout(display_frame)
         
-        self.date_input = QLineEdit()
-        self.date_input.setPlaceholderText("ДД.ММ.ГГГГ")
+        self.quote_label = QLabel("Нажмите кнопку, чтобы получить цитату")
+        self.quote_label.setWordWrap(True)
+        self.quote_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.quote_label.setStyleSheet("font-size: 16px; font-style: italic; padding: 20px;")
         
-        self.type_input = QComboBox()
-        self.type_input.addItems(["Силовая", "Кардио", "Йога", "Плавание", "Растяжка"])
-        self.type_input.setEditable(True)
+        self.author_label = QLabel("")
+        self.author_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         
-        self.duration_input = QLineEdit()
-        self.duration_input.setPlaceholderText("Минуты (напр. 60)")
+        gen_btn = QPushButton("🎲 Сгенерировать цитату")
+        gen_btn.setFixedHeight(40)
+        gen_btn.clicked.connect(self.generate_quote)
         
-        # Форма
-        for label, widget in [("Дата тренировки:", self.date_input), 
-                              ("Тип тренировки:", self.type_input),
-                              ("Длительность (мин):", self.duration_input)]:
-            controls_layout.addWidget(QLabel(label))
-            controls_layout.addWidget(widget)
-        
-        add_btn = QPushButton("➕ Добавить тренировку")
-        add_btn.clicked.connect(self.add_training)
-        add_btn.setStyleSheet("background-color: #3498db; color: white; height: 40px;")
-        controls_layout.addWidget(add_btn)
+        display_layout.addWidget(self.quote_label)
+        display_layout.addWidget(self.author_label)
+        display_layout.addWidget(gen_btn)
+        main_layout.addWidget(display_frame)
 
-        # Фильтры
-        controls_layout.addSpacing(30)
-        controls_layout.addWidget(QLabel("🔍 Фильтр по типу:"))
-        self.type_filter = QLineEdit()
-        self.type_filter.textChanged.connect(self.apply_filters)
-        controls_layout.addWidget(self.type_filter)
-
-        controls_layout.addWidget(QLabel("📅 Фильтр по дате:"))
-        self.date_filter = QLineEdit()
-        self.date_filter.setPlaceholderText("Поиск по дате...")
-        self.date_filter.textChanged.connect(self.apply_filters)
-        controls_layout.addWidget(self.date_filter)
+        # Секция истории и фильтров
+        main_layout.addWidget(QLabel("📜 История и поиск:"))
         
-        controls_layout.addStretch()
-        main_layout.addLayout(controls_layout, 1)
+        filter_layout = QHBoxLayout()
+        self.author_filter = QLineEdit()
+        self.author_filter.setPlaceholderText("Фильтр по автору...")
+        self.author_filter.textChanged.connect(self.refresh_history_list)
+        
+        self.theme_filter = QLineEdit()
+        self.theme_filter.setPlaceholderText("Фильтр по теме...")
+        self.theme_filter.textChanged.connect(self.refresh_history_list)
+        
+        filter_layout.addWidget(self.author_filter)
+        filter_layout.addWidget(self.theme_filter)
+        main_layout.addLayout(filter_layout)
 
-        # Таблица
-        self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Дата", "Тип", "Длительность (мин)"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        main_layout.addWidget(self.table, 3)
+        self.history_list = QListWidget()
+        main_layout.addWidget(self.history_list)
 
-    def load_data(self):
+    def generate_quote(self):
+        quote = random.choice(self.base_quotes)
+        self.quote_label.setText(f"«{quote['text']}»")
+        self.author_label.setText(f"— {quote['author']} ({quote['theme']})")
+        
+        # Добавляем в историю
+        self.history.insert(0, quote) # Новые сверху
+        self.save_history()
+        self.refresh_history_list()
+
+    def refresh_history_list(self):
+        self.history_list.clear()
+        author_q = self.author_filter.text().lower()
+        theme_q = self.theme_filter.text().lower()
+
+        for q in self.history:
+            if author_q in q['author'].lower() and theme_q in q['theme'].lower():
+                item = f"[{q['theme']}] {q['author']}: {q['text']}"
+                self.history_list.addItem(item)
+
+    def save_history(self):
         try:
-            if os.path.exists(self.file_path):
-                with open(self.file_path, "r", encoding="utf-8") as f:
+            with open(self.history_file, "w", encoding="utf-8") as f:
+                json.dump(self.history, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Ошибка сохранения: {e}")
+
+    def load_history(self):
+        if os.path.exists(self.history_file):
+            try:
+                with open(self.history_file, "r", encoding="utf-8") as f:
                     return json.load(f)
-        except Exception:
-            return []
+            except:
+                return []
         return []
-
-    def save_data(self):
-        try:
-            with open(self.file_path, "w", encoding="utf-8") as f:
-                json.dump(self.trainings, f, ensure_ascii=False, indent=4)
-        except IOError as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить данные: {e}")
-
-    def validate_input(self, date, duration):
-        # Проверка даты (ДД.ММ.ГГГГ)
-        date_pattern = r"^\d{2}\.\d{2}\.\d{4}$"
-        if not re.match(date_pattern, date):
-            QMessageBox.warning(self, "Ошибка", "Введите дату в формате ДД.ММ.ГГГГ")
-            return False
-        
-        # Проверка длительности
-        if not duration.isdigit() or int(duration) <= 0:
-            QMessageBox.warning(self, "Ошибка", "Длительность должна быть положительным числом")
-            return False
-        
-        return True
-
-    def add_training(self):
-        date = self.date_input.text().strip()
-        t_type = self.type_input.currentText().strip()
-        duration = self.duration_input.text().strip()
-
-        if not date or not t_type or not duration:
-            QMessageBox.warning(self, "Ошибка", "Заполните все поля")
-            return
-
-        if self.validate_input(date, duration):
-            self.trainings.append({
-                "date": date,
-                "type": t_type,
-                "duration": int(duration)
-            })
-            self.save_data()
-            self.apply_filters()
-            self.date_input.clear()
-            self.duration_input.clear()
-
-    def apply_filters(self):
-        type_txt = self.type_filter.text().lower()
-        date_txt = self.date_filter.text().lower()
-
-        filtered = [t for t in self.trainings 
-                    if type_txt in t['type'].lower() 
-                    and date_txt in t['date'].lower()]
-        
-        self.table.setRowCount(len(filtered))
-        for r, t in enumerate(filtered):
-            self.table.setItem(r, 0, QTableWidgetItem(t['date']))
-            self.table.setItem(r, 1, QTableWidgetItem(t['type']))
-            self.table.setItem(r, 2, QTableWidgetItem(str(t['duration'])))
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = TrainingPlanner()
+    window = QuoteGenerator()
     window.show()
     sys.exit(app.exec())
